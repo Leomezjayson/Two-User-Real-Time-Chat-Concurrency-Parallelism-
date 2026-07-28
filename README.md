@@ -1,79 +1,108 @@
-# UDP Echo Client/Server (Remote Procedure Calls)
+# Two-User Real-Time Chat (Concurrency & Parallelism)
 
-A simple client/server pair built with raw Java sockets (`java.net.DatagramSocket`)
-demonstrating UDP communication — no external networking libraries used.
+A real-time chat application where exactly two clients connect to a server
+and exchange messages instantly, using raw Java TCP sockets — no external
+libraries or frameworks.
 
 ## What it does
 
-- The client sends a text message to the server.
-- The server:
-  - Prints the client's IP address and port to the console.
-  - Inverts the case of every letter in the message (`Hello` → `hELLO`).
-  - Sends the inverted message back.
-- The client prints the reply.
+- The server waits for exactly two clients to connect.
+- Once both are connected, any message sent by one client is immediately
+  relayed to the other.
+- Each client can send and receive messages at the same time — you don't
+  have to wait for a reply before typing your next message.
 
-This project corresponds to the course topic **Remote Procedure Calls (RPC)** —
-demonstrating the fundamental request/response pattern that RPC frameworks
-build on top of, implemented here at the raw socket level.
+This corresponds to the course topic **Concurrency and Parallelism**.
 
-## Why UDP
+## Why concurrency is required here (not optional)
 
-UDP (`DatagramSocket`/`DatagramPacket`) is connectionless — there's no handshake
-before sending data, unlike TCP. This makes it simple and fast, at the cost of
-no delivery guarantee. It's well suited to a simple request/reply exchange like
-this one.
+Without threads, a program can only do one blocking operation at a time.
+
+- **On the server**: if it read from Client A first, it would be stuck
+  waiting for Client A to send something before it could even check
+  Client B — freezing the whole conversation in one direction at a time.
+  The fix: each client gets its **own thread** (`ClientHandler`), so the
+  server can wait on both clients simultaneously.
+
+- **On the client**: a single thread can either wait for user input OR
+  wait for an incoming message — not both at once. The fix: a **listener
+  thread** runs in the background continuously checking for incoming
+  messages, while the main thread stays free to handle what the user types.
+
+This is the core idea behind concurrency: multiple tasks making progress
+*independently*, without one blocking the other.
 
 ## How to run
 
-**1. Compile both files:**
+**1. Compile:**
 ```bash
-javac EchoServer.java EchoClient.java
+javac ChatServer.java ChatClient.java
 ```
 
-**2. Start the server** (in one terminal):
+**2. Start the server** (one terminal):
 ```bash
-java EchoServer
+java ChatServer
 ```
 
-**3. Start the client** (in a separate terminal):
+**3. Start Client A** (a second terminal):
 ```bash
-java EchoClient
+java ChatClient
 ```
 
-**4. Type messages in the client.** Type `exit` to quit.
+**4. Start Client B** (a third terminal):
+```bash
+java ChatClient
+```
+
+**5. Type messages in either client window** — they'll appear instantly
+in the other. Type `exit` in either client to disconnect it.
 
 ### Example
 
+Client A:
 ```
-You: Hello
-Server: hELLO
-
-You: Goodbye World
-Server: gOODBYE wORLD
+You: Hello from A
+Peer: Hi A, this is B
 ```
 
-Server console output:
+Client B:
 ```
-Received from 127.0.0.1:39722 -> "Hello"
-Replied with -> "hELLO"
-Received from 127.0.0.1:39722 -> "Goodbye World"
-Replied with -> "gOODBYE wORLD"
+Peer: Hello from A
+You: Hi A, this is B
+```
+
+Server console:
+```
+Client A connected: /127.0.0.1:53462
+Client B connected: /127.0.0.1:53476
+Both clients connected — starting relay.
+
+Client A -> Hello from A
+Client B -> Hi A, this is B
 ```
 
 ## Key concepts demonstrated
 
-- **Raw socket programming**: `DatagramSocket` and `DatagramPacket`, no
-  networking libraries or frameworks.
-- **Connectionless communication**: each packet is independent; the server
-  doesn't maintain a persistent connection to the client.
-- **Byte-level data transfer**: strings are converted to/from raw bytes
-  (`getBytes()` / `new String(...)`) — the network only understands bytes,
-  not Java objects, so this conversion is required for any data to travel
-  over a socket.
-- **Client identification**: UDP packets carry the sender's address and port
-  automatically, which the server reads via `getAddress()` and `getPort()`.
+- **Thread-per-client model**: the server spawns one thread per connected
+  client, allowing simultaneous, independent handling of both.
+- **Concurrent send/receive on the client**: a dedicated listener thread
+  plus the main thread together allow full-duplex (two-way, simultaneous)
+  communication over a single socket.
+- **Blocking I/O with threads**: `readLine()` blocks the calling thread
+  until data arrives — threads are what let multiple blocking operations
+  happen at once without freezing the whole program.
+- **TCP sockets**: unlike the UDP-based Echo project, this uses TCP
+  (`ServerSocket`/`Socket`), which is connection-based and guarantees
+  ordered, reliable delivery — appropriate for a chat application where
+  message order matters.
 
 ## Tech stack
 
-- Java 21 (no external dependencies)
+- Java 21+ (no external dependencies)
 
+## Where this fits in the larger project
+
+This is the foundation for the group's unified messaging app — the
+next project (multi-user chat) builds directly on the thread-per-client
+pattern established here, extending it beyond two fixed clients to any
+number of simultaneous users.
